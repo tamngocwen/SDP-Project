@@ -477,7 +477,13 @@ public class WiFi extends Aware_Sensor {
         @Override
         protected void onHandleIntent(Intent intent) {
             if (intent.getAction() != null) {
-                WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+                if (SignificantMotion.isSignificantMotionActive && !SignificantMotion.CURRENT_SIGMOTION_STATE) {
+                    if (Aware.DEBUG)
+                        Log.d(TAG, "Device not moving. Ignoring WiFi action: " + intent.getAction());
+                    return;
+                }
+
+                    WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
 
                 if (intent.getAction().equals(WiFi.ACTION_AWARE_WIFI_REQUEST_SCAN)) {
                     try {
