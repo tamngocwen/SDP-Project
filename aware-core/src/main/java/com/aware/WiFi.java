@@ -2,6 +2,7 @@
 package com.aware;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.AlarmManager;
 import android.app.IntentService;
 import android.app.PendingIntent;
@@ -48,6 +49,10 @@ public class WiFi extends Aware_Sensor {
 
     private static String TAG = "AWARE::WiFi";
 
+    // Add a flag to track if the device has moved since the last scan + idle timeout
+    private static boolean hasMovedSinceLastScan = true;
+    private static long lastScanTimestamp = 0;
+
     private static AlarmManager alarmManager = null;
     private static WifiManager wifiManager = null;
     private static PendingIntent wifiScan = null;
@@ -79,6 +84,7 @@ public class WiFi extends Aware_Sensor {
      */
     public static final String ACTION_AWARE_WIFI_REQUEST_SCAN = "ACTION_AWARE_WIFI_REQUEST_SCAN";
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
     public void onCreate() {
         super.onCreate();
@@ -100,7 +106,22 @@ public class WiFi extends Aware_Sensor {
         REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_WIFI_STATE);
         REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_COARSE_LOCATION);
         REQUIRED_PERMISSIONS.add(Manifest.permission.ACCESS_NETWORK_STATE);
+
+        IntentFilter motionFilter = new IntentFilter();
+        motionFilter.addAction(SignificantMotion.ACTION_AWARE_SIGNIFICANT_MOTION_START);
+        registerReceiver(motionReceiver, motionFilter);
     }
+
+    // Create a receiver to listen for motion
+    private static final BroadcastReceiver motionReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction().equals(SignificantMotion.ACTION_AWARE_SIGNIFICANT_MOTION_START)) {
+                // The user has started moving
+                hasMovedSinceLastScan = true;
+            }
+        }
+    };
 
     private static WiFi.AWARESensorObserver awareSensor;
 
@@ -163,6 +184,12 @@ public class WiFi extends Aware_Sensor {
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        try {
+            unregisterReceiver(motionReceiver);
+        } catch (IllegalArgumentException e) {
+            // Receiver wasn't registered
+        }
 
         unregisterReceiver(wifiMonitor);
         if (wifiScan != null) alarmManager.cancel(wifiScan);
@@ -477,17 +504,23 @@ public class WiFi extends Aware_Sensor {
         @Override
         protected void onHandleIntent(Intent intent) {
             if (intent.getAction() != null) {
-                if (SignificantMotion.isSignificantMotionActive && !SignificantMotion.CURRENT_SIGMOTION_STATE) {
-                    if (Aware.DEBUG)
-                        Log.d(TAG, "Device not moving. Ignoring WiFi action: " + intent.getAction());
-                    return;
-                }
 
                     WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
 
                 if (intent.getAction().equals(WiFi.ACTION_AWARE_WIFI_REQUEST_SCAN)) {
                     try {
                         if (wifiManager.isWifiEnabled()) {
+                            long now = System.currentTimeMillis();
+                            long timeSinceLastScan = now - lastScanTimestamp;
+
+                            // 1 hour = 3600000 milliseconds
+                            boolean maxIdleTimeReached = timeSinceLastScan > 3600000;
+
+                            // CHECK MOTION STATE BEFORE SCANNING
+                            if (SignificantMotion.isSignificantMotionActive && !hasMovedSinceLastScan && !maxIdleTimeReached) {
+                                if (Aware.DEBUG) Log.d(TAG, "Device is stationary. Skipping WiFi scan to save battery.");
+                                return; // Skip the scan completely
+                            }
 
                             if (Aware.DEBUG) Log.d(TAG, ACTION_AWARE_WIFI_SCAN_STARTED);
 
@@ -495,6 +528,9 @@ public class WiFi extends Aware_Sensor {
                             sendBroadcast(scanStart);
 
                             wifiManager.startScan();
+
+                            // Reset the flag after successfully triggering a scan
+                            hasMovedSinceLastScan = false;
 
                             if (awareSensor != null) awareSensor.onWiFiScanStarted();
 
