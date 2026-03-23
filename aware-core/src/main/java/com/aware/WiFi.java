@@ -15,6 +15,7 @@ import android.content.IntentFilter;
 import android.content.SyncRequest;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteException;
+import android.database.Cursor;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
@@ -26,6 +27,7 @@ import com.aware.providers.WiFi_Provider.WiFi_Data;
 import com.aware.providers.WiFi_Provider.WiFi_Sensor;
 import com.aware.utils.Aware_Sensor;
 import com.aware.utils.Encrypter;
+import com.aware.providers.Barometer_Provider;
 
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -236,6 +238,14 @@ public class WiFi extends Aware_Sensor {
             int frequency = mWifi.getFrequency();
             rowData.put(WiFi_Sensor.FREQUENCY, frequency);
 
+            // Check if the device is experiencing significant motion
+            boolean isMoving = SignificantMotion.CURRENT_SIGMOTION_STATE;
+            rowData.put(WiFi_Sensor.IS_MOVING, isMoving ? 1 : 0);
+
+            // Detect if going up/down stairs using Barometer changes over the last 10 seconds
+            boolean isStairs = detectStairs(mContext);
+            rowData.put(WiFi_Sensor.IS_STAIRS, isStairs ? 1 : 0);
+
             // Measure throughput on current connection
             double[] throughput = measureWiFiThroughput();
             rowData.put(WiFi_Sensor.THROUGHPUT_DOWNLOAD, throughput[0]);
@@ -412,6 +422,49 @@ public class WiFi extends Aware_Sensor {
                 }
             }
         }
+
+        /**
+         * Detect stairs by looking for significant ambient pressure changes
+         * from the Barometer sensor over the last 10 seconds.
+         */
+        private boolean detectStairs(Context context) {
+            boolean stairsDetected = false;
+            Cursor c = null;
+            try {
+                // Look back 10 seconds
+                long pastTime = System.currentTimeMillis() - 10000;
+
+                c = context.getContentResolver().query(
+                        Barometer_Provider.Barometer_Data.CONTENT_URI,
+                        new String[]{ Barometer_Provider.Barometer_Data.AMBIENT_PRESSURE },
+                        Barometer_Provider.Barometer_Data.TIMESTAMP + " > ?",
+                        new String[]{ String.valueOf(pastTime) },
+                        Barometer_Provider.Barometer_Data.TIMESTAMP + " ASC"
+                );
+
+                if (c != null && c.getCount() > 1) {
+                    c.moveToFirst();
+                    double firstPressure = c.getDouble(0);
+
+                    c.moveToLast();
+                    double lastPressure = c.getDouble(0);
+
+                    // Roughly 0.12 mbar change per meter of elevation.
+                    // A 0.36 mbar difference indicates roughly 1 floor (3 meters) of vertical change.
+                    if (Math.abs(firstPressure - lastPressure) > 0.36) {
+                        stairsDetected = true;
+                    }
+                }
+            } catch (Exception e) {
+                if (Aware.DEBUG) Log.e(TAG, "Error detecting stairs: " + e.getMessage());
+            } finally {
+                if (c != null && !c.isClosed()) {
+                    c.close();
+                }
+            }
+            return stairsDetected;
+        }
+
     }
 
     /**

@@ -27,7 +27,7 @@ import java.util.HashMap;
  */
 public class WiFi_Provider extends ContentProvider {
 
-    public static final int DATABASE_VERSION = 6;
+    public static final int DATABASE_VERSION = 7;
 
     /**
      * Authority of WiFi content provider
@@ -64,6 +64,10 @@ public class WiFi_Provider extends ContentProvider {
         public static final String FREQUENCY = "frequency";
         public static final String SIGNAL_STRENGTH = "signal_strength";
         public static final String LINK_SPEED = "link_speed";
+
+        // movement and stair detection
+        public static final String IS_MOVING = "is_moving";
+        public static final String IS_STAIRS = "is_stairs";
     }
 
     /**
@@ -117,6 +121,8 @@ public class WiFi_Provider extends ContentProvider {
                     + WiFi_Sensor.FREQUENCY + " integer default 0,"
                     + WiFi_Sensor.SIGNAL_STRENGTH + " integer default 0,"
                     + WiFi_Sensor.LINK_SPEED + " integer default 0"
+                    + WiFi_Sensor.IS_MOVING + " integer default 0,"
+                    + WiFi_Sensor.IS_STAIRS + " integer default 0"
     };
 
     private UriMatcher sUriMatcher = null;
@@ -271,6 +277,8 @@ public class WiFi_Provider extends ContentProvider {
         wifiDeviceMap.put(WiFi_Sensor.FREQUENCY, WiFi_Sensor.FREQUENCY);
         wifiDeviceMap.put(WiFi_Sensor.SIGNAL_STRENGTH, WiFi_Sensor.SIGNAL_STRENGTH);
         wifiDeviceMap.put(WiFi_Sensor.LINK_SPEED, WiFi_Sensor.LINK_SPEED);
+        wifiDeviceMap.put(WiFi_Sensor.IS_MOVING, WiFi_Sensor.IS_MOVING);
+        wifiDeviceMap.put(WiFi_Sensor.IS_STAIRS, WiFi_Sensor.IS_STAIRS);
 
         return true;
     }
