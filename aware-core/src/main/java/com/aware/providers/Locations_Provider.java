@@ -28,7 +28,7 @@ import java.util.HashMap;
  */
 public class Locations_Provider extends ContentProvider {
 
-    public static final int DATABASE_VERSION = 3;
+    public static final int DATABASE_VERSION = 4;
 
     /**
      * Authority of Locations content provider
@@ -58,6 +58,13 @@ public class Locations_Provider extends ContentProvider {
         public static final String DEVICE_ID = "device_id";
         public static final String LATITUDE = "double_latitude";
         public static final String LONGITUDE = "double_longitude";
+        public static final String X_TILE = "x_tile";   // New field for tile x-coordinate
+        public static final String Y_TILE = "y_tile";   // New field for tile y-coordinate
+        public static final String ZOOM_LEVEL = "zoom_level"; // Store zoom level
+        public static final String EPSILON = "epsilon"; // Epsilon for grr
+        public static final String GRID_SIZE = "grid_size"; // Grid size for grr
+        public static final String X_TILE_PERTURB = "x_tile_perturb";   // New field for perturbed tile x-coordinate
+        public static final String Y_TILE_PERTURB = "y_tile_perturb";   // New field for perturbed tile y-coordinate
         public static final String BEARING = "double_bearing";
         public static final String SPEED = "double_speed";
         public static final String ALTITUDE = "double_altitude";
@@ -76,6 +83,13 @@ public class Locations_Provider extends ContentProvider {
                     + Locations_Data.DEVICE_ID + " text default '',"
                     + Locations_Data.LATITUDE + " real default 0,"
                     + Locations_Data.LONGITUDE + " real default 0,"
+                    + Locations_Data.X_TILE + " integer default 0,"
+                    + Locations_Data.Y_TILE + " integer default 0,"
+                    + Locations_Data.ZOOM_LEVEL + " integer default 17,"
+                    + Locations_Data.EPSILON + " integer default 0,"
+                    + Locations_Data.GRID_SIZE + " integer default 0,"
+                    + Locations_Data.X_TILE_PERTURB + " integer default 0,"
+                    + Locations_Data.Y_TILE_PERTURB + " integer default 0,"
                     + Locations_Data.BEARING + " real default 0,"
                     + Locations_Data.SPEED + " real default 0,"
                     + Locations_Data.ALTITUDE + " real default 0,"
@@ -196,6 +210,20 @@ public class Locations_Provider extends ContentProvider {
                 Locations_Data.LATITUDE);
         locationsProjectionMap.put(Locations_Data.LONGITUDE,
                 Locations_Data.LONGITUDE);
+        locationsProjectionMap.put(Locations_Data.X_TILE,
+                Locations_Data.X_TILE);
+        locationsProjectionMap.put(Locations_Data.Y_TILE,
+                Locations_Data.Y_TILE);
+        locationsProjectionMap.put(Locations_Data.ZOOM_LEVEL,
+                Locations_Data.ZOOM_LEVEL);
+        locationsProjectionMap.put(Locations_Data.EPSILON,
+                Locations_Data.EPSILON);
+        locationsProjectionMap.put(Locations_Data.GRID_SIZE,
+                Locations_Data.GRID_SIZE);
+        locationsProjectionMap.put(Locations_Data.X_TILE_PERTURB,
+                Locations_Data.X_TILE_PERTURB);
+        locationsProjectionMap.put(Locations_Data.Y_TILE_PERTURB,
+                Locations_Data.Y_TILE_PERTURB);
         locationsProjectionMap.put(Locations_Data.BEARING,
                 Locations_Data.BEARING);
         locationsProjectionMap.put(Locations_Data.SPEED, Locations_Data.SPEED);
@@ -248,7 +276,7 @@ public class Locations_Provider extends ContentProvider {
      */
     @Override
     public synchronized int update(Uri uri, ContentValues values, String selection,
-                      String[] selectionArgs) {
+                                   String[] selectionArgs) {
 
         initialiseDatabase();
 

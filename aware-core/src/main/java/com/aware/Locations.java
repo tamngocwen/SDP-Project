@@ -19,6 +19,11 @@ import com.aware.providers.Locations_Provider;
 import com.aware.providers.Locations_Provider.Locations_Data;
 import com.aware.utils.Aware_Sensor;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+
 /**
  * Location service for Aware framework
  * Provides mobile device network triangulation and GPS location
@@ -28,6 +33,12 @@ import com.aware.utils.Aware_Sensor;
 public class Locations extends Aware_Sensor implements LocationListener {
 
     private static LocationManager locationManager = null;
+
+    private static final Random RNG1 = new Random(42); // Fixed seed for reproducibility
+    private static final Random RNG2 = new Random(32); // Fixed seed for perturbation
+    private static final int ZOOM_LEVEL = 17; // Fixed zoom level, can be made configurable
+    private static final double EPSILON = 2.0; // Default epsilon, can be made configurable
+    private static final int GRID_SIZE = 10; // ±10 tiles for domain
 
     /**
      * This listener will keep track for failed GPS location requests
@@ -83,6 +94,37 @@ public class Locations extends Aware_Sensor implements LocationListener {
                             rowData.put(Locations_Data.SPEED, bestLocation.getSpeed());
                             rowData.put(Locations_Data.ALTITUDE, bestLocation.getAltitude());
                             rowData.put(Locations_Data.ACCURACY, bestLocation.getAccuracy());
+
+                            int[] tiles = latLonToTile(bestLocation.getLatitude(), bestLocation.getLongitude(), ZOOM_LEVEL);
+                            int xTile = tiles[0];
+                            int yTile = tiles[1];
+                            String tileStr = xTile + "," + yTile;
+
+                            List<String> domain = generateTileDomain(xTile, yTile);
+                            double[] pq = calculatePandQ(EPSILON, domain.size());
+                            double p = pq[0];
+                            double q = pq[1];
+
+                            if (Aware.DEBUG) {
+                                Log.d(TAG, "For epsilon = " + EPSILON);
+                                Log.d(TAG, "p = " + p);
+                                Log.d(TAG, "q = " + q);
+                                Log.d(TAG, "--------------");
+                            }
+
+                            String perturbedTile = perturbLocation(domain, tileStr, p, q);
+                            String[] tileParts = perturbedTile.split(",");
+                            int perturbedXTile = Integer.parseInt(tileParts[0]);
+                            int perturbedYTile = Integer.parseInt(tileParts[1]);
+
+                            rowData.put(Locations_Data.X_TILE, xTile);
+                            rowData.put(Locations_Data.Y_TILE, yTile);
+                            rowData.put(Locations_Data.ZOOM_LEVEL, ZOOM_LEVEL);
+                            rowData.put(Locations_Data.EPSILON, EPSILON);
+                            rowData.put(Locations_Data.GRID_SIZE, GRID_SIZE);
+                            rowData.put(Locations_Data.X_TILE_PERTURB, perturbedXTile);
+                            rowData.put(Locations_Data.Y_TILE_PERTURB, perturbedYTile);
+
                         } else {
                             rowData.put(Locations_Data.LABEL, "outofbounds");
                         }
@@ -171,7 +213,7 @@ public class Locations extends Aware_Sensor implements LocationListener {
                         || (lat2 < lat0 && lat0 < lat1))
                         && ((lon1 < lon0 && lon0 < lon2)
                         || (lon2 < lon0 && lon0 < lon1))
-                        ) {
+                ) {
                     if (Aware.DEBUG) Log.d(TAG, "Location geofence: within " + fences[i]);
                     return true;
                 }
@@ -578,6 +620,67 @@ public class Locations extends Aware_Sensor implements LocationListener {
     }
 
     /**
+     *  Change latitude and longitude to tile
+     *
+     * @param lat Latitude
+     * @param lon Longitude
+     * @param zoom Zoom level
+     * @return xTile and YTile
+     */
+    private int[] latLonToTile(double lat, double lon, int zoom) {
+        double latRad = Math.toRadians(lat);
+        double xPixel = (lon + 180.0) / 360.0 * (256.0 * Math.pow(2, zoom));
+        double yPixel = (1.0 - (Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI)) / 2.0 * (256.0 * Math.pow(2, zoom));
+        int xTile = (int) (xPixel / 256.0);
+        int yTile = (int) (yPixel / 256.0);
+        return new int[]{xTile, yTile};
+    }
+
+    // Generate domain of nearby tiles
+    private List<String> generateTileDomain(int xTile, int yTile) {
+        List<String> domain = new ArrayList<>();
+        for (int dx = -GRID_SIZE; dx <= GRID_SIZE; dx++) {
+            for (int dy = -GRID_SIZE; dy <= GRID_SIZE; dy++) {
+                domain.add((xTile + dx) + "," + (yTile + dy));
+            }
+        }
+        return domain;
+    }
+
+    // Calculate P and Q for Perturb the location
+    private double[] calculatePandQ(double epsilon, int domainSize) {
+        double p = Math.exp(epsilon) / (Math.exp(epsilon) + domainSize - 1);
+        double q = 1.0 / (Math.exp(epsilon) + domainSize - 1);
+        return new double[]{p, q};
+    }
+
+    // Perturb the location using GRR
+    private String perturbLocation(List<String> domain, String originalLocation, double p, double q) {
+        double r = RNG1.nextDouble();
+        if (Aware.DEBUG) Log.d(TAG, "GRR_Random: " + r);
+
+        if (r <= p) {
+            if (Aware.DEBUG) Log.d(TAG, "GRR_Len and Index: 1, 0");
+            return originalLocation;
+        } else {
+            List<String> alternativeDomain = new ArrayList<>();
+            for (String loc : domain) {
+                if (!loc.equals(originalLocation)) {
+                    alternativeDomain.add(loc);
+                }
+            }
+            if (alternativeDomain.isEmpty()) {
+                return originalLocation;
+            }
+
+            Collections.sort(alternativeDomain);
+            int index = RNG2.nextInt(alternativeDomain.size());
+            if (Aware.DEBUG) Log.d(TAG, "GRR_Len and Index: " + alternativeDomain.size() + ", " + index);
+            return alternativeDomain.get(index);
+        }
+    }
+
+    /**
      * Save a location, handling geofencing.
      *
      * @param bestLocation Location to save
@@ -601,6 +704,37 @@ public class Locations extends Aware_Sensor implements LocationListener {
             rowData.put(Locations_Data.SPEED, bestLocation.getSpeed());
             rowData.put(Locations_Data.ALTITUDE, bestLocation.getAltitude());
             rowData.put(Locations_Data.ACCURACY, bestLocation.getAccuracy());
+
+            int[] tiles = latLonToTile(bestLocation.getLatitude(), bestLocation.getLongitude(), ZOOM_LEVEL);
+            int xTile = tiles[0];
+            int yTile = tiles[1];
+            String tileStr = xTile + "," + yTile;
+
+            List<String> domain = generateTileDomain(xTile, yTile);
+            double[] pq = calculatePandQ(EPSILON, domain.size());
+            double p = pq[0];
+            double q = pq[1];
+
+            if (Aware.DEBUG) {
+                Log.d(TAG, "For epsilon = " + EPSILON);
+                Log.d(TAG, "p = " + p);
+                Log.d(TAG, "q = " + q);
+                Log.d(TAG, "--------------");
+            }
+
+            String perturbedTile = perturbLocation(domain, tileStr, p, q);
+            String[] tileParts = perturbedTile.split(",");
+            int perturbedXTile = Integer.parseInt(tileParts[0]);
+            int perturbedYTile = Integer.parseInt(tileParts[1]);
+
+            rowData.put(Locations_Data.X_TILE, xTile);
+            rowData.put(Locations_Data.Y_TILE, yTile);
+            rowData.put(Locations_Data.ZOOM_LEVEL, ZOOM_LEVEL);
+            rowData.put(Locations_Data.EPSILON, EPSILON);
+            rowData.put(Locations_Data.GRID_SIZE, GRID_SIZE);
+            rowData.put(Locations_Data.X_TILE_PERTURB, perturbedXTile);
+            rowData.put(Locations_Data.Y_TILE_PERTURB, perturbedYTile);
+
         } else {
             rowData.put(Locations_Data.LABEL, "outofbounds");
         }
