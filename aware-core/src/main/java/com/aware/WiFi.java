@@ -217,6 +217,9 @@ public class WiFi extends Aware_Sensor {
 
         @Override
         public String call() throws Exception {
+            if (!mWifi.getSSID().equals("\"UCONN-SECURE\"") && !mWifi.getSSID().equals("\"UCONN-GUEST\"")){
+                return Thread.currentThread().getName();
+            }
             ContentValues rowData = new ContentValues();
             rowData.put(WiFi_Sensor.DEVICE_ID, Aware.getSetting(mContext, Aware_Preferences.DEVICE_ID));
             rowData.put(WiFi_Sensor.TIMESTAMP, System.currentTimeMillis());
